@@ -330,3 +330,4 @@ const styles = {
   controls: { background: '#0f172a', border: '1px solid #1e293b' },
   minimap: { background: '#0d1322', border: '1px solid #1e293b', borderRadius: 8 },
 };
+

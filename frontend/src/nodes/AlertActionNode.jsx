@@ -98,3 +98,4 @@ const styles = {
     background: '#ec4899', width: 10, height: 10, border: '2px solid #831843',
   },
 };
+
