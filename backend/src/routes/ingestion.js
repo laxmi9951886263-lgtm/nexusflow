@@ -1,19 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const Telemetry = require('../models/Telemetry');
+const {
+  validateSingleTelemetry,
+  validateBatchTelemetry,
+} = require('../middleware/validator');
 
 // ═══════════════════════════════════════════════════════════════════════
-// HIGH-SPEED TELEMETRY INGESTION ENDPOINTS
-// Designed for 5,000+ writes/sec with MongoDB Time-Series collections
+// HIGH-SPEED TELEMETRY INGESTION ENDPOINTS (Day 2 Enhanced)
+// Features: In-memory write buffering, schema validation, range queries
 // ═══════════════════════════════════════════════════════════════════════
 
-// ── In-memory buffer for batch writes (performance optimization) ──
 let writeBuffer = [];
 let flushTimer = null;
 const BATCH_SIZE = 100;
 const FLUSH_INTERVAL_MS = 500;
 
-// Stats tracking
 const stats = {
   totalIngested: 0,
   totalBatches: 0,
@@ -21,10 +23,6 @@ const stats = {
   startTime: Date.now(),
 };
 
-/**
- * Flush the write buffer to MongoDB in a single insertMany call.
- * This reduces per-document overhead and maximizes throughput.
- */
 async function flushBuffer() {
   if (writeBuffer.length === 0) return;
 
@@ -39,43 +37,25 @@ async function flushBuffer() {
   }
 }
 
-// Start periodic flush timer
 function startFlushTimer() {
   if (flushTimer) return;
   flushTimer = setInterval(flushBuffer, FLUSH_INTERVAL_MS);
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// POST /api/ingest — Single telemetry point
-// Body: { deviceId, sensorType, value, unit?, tags?, timestamp? }
+// POST /api/ingest — Single telemetry point with strict validation
 // ─────────────────────────────────────────────────────────────────────
-router.post('/', (req, res) => {
-  const { deviceId, sensorType, value, unit, tags, timestamp } = req.body;
-
-  if (!deviceId || !sensorType || value === undefined) {
-    return res.status(400).json({
-      error: 'Missing required fields: deviceId, sensorType, value',
-    });
-  }
-
-  const doc = {
-    deviceId,
-    sensorType,
-    value: Number(value),
-    unit: unit || '',
-    tags: tags || {},
-    timestamp: timestamp ? new Date(timestamp) : new Date(),
-  };
+router.post('/', validateSingleTelemetry, (req, res) => {
+  const doc = req.sanitizedTelemetry;
 
   writeBuffer.push(doc);
   startFlushTimer();
 
-  // Auto-flush when buffer is full
   if (writeBuffer.length >= BATCH_SIZE) {
     flushBuffer();
   }
 
-  // Broadcast to WebSocket clients (will be wired in index.js)
+  // Broadcast to live WebSocket subscribers
   if (req.app.locals.broadcast) {
     req.app.locals.broadcast({
       type: 'telemetry',
@@ -83,36 +63,25 @@ router.post('/', (req, res) => {
     });
   }
 
-  res.status(202).json({ status: 'accepted', buffered: writeBuffer.length });
+  res.status(202).json({
+    status: 'accepted',
+    buffered: writeBuffer.length,
+    point: doc,
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// POST /api/ingest/batch — Batch ingestion (array of points)
-// Body: [ { deviceId, sensorType, value, ... }, ... ]
+// POST /api/ingest/batch — Batch ingestion with per-item validation
 // ─────────────────────────────────────────────────────────────────────
-router.post('/batch', async (req, res) => {
-  const points = req.body;
-
-  if (!Array.isArray(points) || points.length === 0) {
-    return res.status(400).json({ error: 'Body must be a non-empty array' });
-  }
-
-  const docs = points.map((p) => ({
-    deviceId: p.deviceId,
-    sensorType: p.sensorType,
-    value: Number(p.value),
-    unit: p.unit || '',
-    tags: p.tags || {},
-    timestamp: p.timestamp ? new Date(p.timestamp) : new Date(),
-  }));
+router.post('/batch', validateBatchTelemetry, async (req, res) => {
+  const docs = req.sanitizedBatch;
 
   try {
     await Telemetry.insertMany(docs, { ordered: false });
     stats.totalIngested += docs.length;
     stats.totalBatches++;
 
-    // Broadcast latest point
-    if (req.app.locals.broadcast) {
+    if (req.app.locals.broadcast && docs.length > 0) {
       req.app.locals.broadcast({
         type: 'telemetry_batch',
         count: docs.length,
@@ -120,7 +89,11 @@ router.post('/batch', async (req, res) => {
       });
     }
 
-    res.json({ status: 'ok', ingested: docs.length });
+    res.json({
+      status: 'ok',
+      ingested: docs.length,
+      warnings: req.validationWarnings || undefined,
+    });
   } catch (err) {
     stats.errors++;
     res.status(500).json({ error: err.message });
@@ -128,7 +101,54 @@ router.post('/batch', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// GET /api/ingest/stats — Ingestion statistics
+// GET /api/ingest/time-range — Time-Window Range Query (Day 2 Milestone)
+// Query: ?deviceId=TURB-001&sensorType=temperature&minutes=60
+// ─────────────────────────────────────────────────────────────────────
+router.get('/time-range', async (req, res) => {
+  const { deviceId, sensorType, minutes = 30 } = req.query;
+
+  if (!deviceId) {
+    return res.status(400).json({ error: 'deviceId is required' });
+  }
+
+  const since = new Date(Date.now() - Number(minutes) * 60 * 1000);
+  const matchFilter = {
+    deviceId: String(deviceId).toUpperCase(),
+    timestamp: { $gte: since },
+  };
+  if (sensorType) {
+    matchFilter.sensorType = String(sensorType).toLowerCase();
+  }
+
+  try {
+    const statsSummary = await Telemetry.aggregate([
+      { $match: matchFilter },
+      {
+        $group: {
+          _id: '$sensorType',
+          avgValue: { $avg: '$value' },
+          minValue: { $min: '$value' },
+          maxValue: { $max: '$value' },
+          sampleCount: { $sum: 1 },
+          firstRecorded: { $min: '$timestamp' },
+          lastRecorded: { $max: '$timestamp' },
+        },
+      },
+    ]);
+
+    res.json({
+      deviceId: matchFilter.deviceId,
+      windowMinutes: Number(minutes),
+      since: since.toISOString(),
+      sensors: statsSummary,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// GET /api/ingest/stats — Real-time performance & write buffer status
 // ─────────────────────────────────────────────────────────────────────
 router.get('/stats', (req, res) => {
   const uptimeSec = (Date.now() - stats.startTime) / 1000;
@@ -143,15 +163,14 @@ router.get('/stats', (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// GET /api/ingest/query — Query telemetry data
-// Query: ?deviceId=xxx&sensorType=temperature&from=ISO&to=ISO&limit=100
+// GET /api/ingest/query — Raw points pagination
 // ─────────────────────────────────────────────────────────────────────
 router.get('/query', async (req, res) => {
-  const { deviceId, sensorType, from, to, limit } = req.query;
+  const { deviceId, sensorType, from, to, limit = 100 } = req.query;
 
   const filter = {};
-  if (deviceId) filter.deviceId = deviceId;
-  if (sensorType) filter.sensorType = sensorType;
+  if (deviceId) filter.deviceId = String(deviceId).toUpperCase();
+  if (sensorType) filter.sensorType = String(sensorType).toLowerCase();
   if (from || to) {
     filter.timestamp = {};
     if (from) filter.timestamp.$gte = new Date(from);
@@ -161,7 +180,7 @@ router.get('/query', async (req, res) => {
   try {
     const docs = await Telemetry.find(filter)
       .sort({ timestamp: -1 })
-      .limit(Number(limit) || 100)
+      .limit(Math.min(Number(limit), 1000))
       .lean();
 
     res.json({ count: docs.length, data: docs });
@@ -170,63 +189,4 @@ router.get('/query', async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────
-// GET /api/ingest/aggregate — Aggregation pipeline
-// Query: ?deviceId=xxx&sensorType=temperature&interval=minute|hour|day
-// ─────────────────────────────────────────────────────────────────────
-router.get('/aggregate', async (req, res) => {
-  const { deviceId, sensorType, interval } = req.query;
-
-  if (!deviceId) {
-    return res.status(400).json({ error: 'deviceId is required' });
-  }
-
-  const dateGroup = {
-    minute: {
-      year: { $year: '$timestamp' },
-      month: { $month: '$timestamp' },
-      day: { $dayOfMonth: '$timestamp' },
-      hour: { $hour: '$timestamp' },
-      minute: { $minute: '$timestamp' },
-    },
-    hour: {
-      year: { $year: '$timestamp' },
-      month: { $month: '$timestamp' },
-      day: { $dayOfMonth: '$timestamp' },
-      hour: { $hour: '$timestamp' },
-    },
-    day: {
-      year: { $year: '$timestamp' },
-      month: { $month: '$timestamp' },
-      day: { $dayOfMonth: '$timestamp' },
-    },
-  };
-
-  const matchStage = { deviceId };
-  if (sensorType) matchStage.sensorType = sensorType;
-
-  try {
-    const results = await Telemetry.aggregate([
-      { $match: matchStage },
-      {
-        $group: {
-          _id: dateGroup[interval] || dateGroup.minute,
-          avgValue: { $avg: '$value' },
-          minValue: { $min: '$value' },
-          maxValue: { $max: '$value' },
-          count: { $sum: 1 },
-          firstTimestamp: { $first: '$timestamp' },
-        },
-      },
-      { $sort: { firstTimestamp: -1 } },
-      { $limit: 100 },
-    ]);
-
-    res.json({ interval: interval || 'minute', data: results });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 module.exports = router;
-
