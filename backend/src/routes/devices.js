@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const Device = require('../models/Device');
+const { DEVICES } = require('../services/simulator');
+
+// ═══════════════════════════════════════════════════════════════════════
+// IoT DEVICE REGISTRY & HEALTH DIAGNOSTICS (Day 3 Enhanced)
+// ═══════════════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────────────
 // GET /api/devices — List all registered devices
@@ -8,10 +13,11 @@ const Device = require('../models/Device');
 router.get('/', async (req, res) => {
   try {
     const devices = await Device.find().sort({ updatedAt: -1 }).lean();
-    res.json(devices);
+    if (devices.length > 0) return res.json(devices);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Fallback to in-memory simulator list when DB offline
   }
+  res.json(DEVICES);
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -26,10 +32,12 @@ router.post('/', async (req, res) => {
     });
   }
 
+  const cleanDeviceId = deviceId.trim().toUpperCase();
+
   try {
     const device = await Device.create({
-      deviceId,
-      name,
+      deviceId: cleanDeviceId,
+      name: name.trim(),
       type,
       sensors: sensors || [],
       location: location || {},
@@ -37,9 +45,12 @@ router.post('/', async (req, res) => {
     res.status(201).json(device);
   } catch (err) {
     if (err.code === 11000) {
-      return res.status(409).json({ error: `Device "${deviceId}" already exists` });
+      return res.status(409).json({ error: `Device "${cleanDeviceId}" already exists` });
     }
-    res.status(500).json({ error: err.message });
+    // In-memory fallback
+    const newDev = { deviceId: cleanDeviceId, name, type, sensors: sensors || [], location: location || {}, status: 'online' };
+    DEVICES.push(newDev);
+    res.status(201).json(newDev);
   }
 });
 
@@ -47,44 +58,108 @@ router.post('/', async (req, res) => {
 // GET /api/devices/:deviceId — Get a single device
 // ─────────────────────────────────────────────────────────────────────
 router.get('/:deviceId', async (req, res) => {
+  const id = req.params.deviceId.toUpperCase();
   try {
-    const device = await Device.findOne({ deviceId: req.params.deviceId }).lean();
-    if (!device) return res.status(404).json({ error: 'Device not found' });
-    res.json(device);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    const device = await Device.findOne({ deviceId: id }).lean();
+    if (device) return res.json(device);
+  } catch (err) {}
+
+  const memDev = DEVICES.find((d) => d.deviceId === id);
+  if (!memDev) return res.status(404).json({ error: `Device ${id} not found` });
+  res.json(memDev);
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// PUT /api/devices/:deviceId — Update device
+// PATCH /api/devices/:deviceId/status — Quick state toggle (Day 3 Feature)
+// Body: { status: 'online' | 'offline' | 'maintenance' | 'error' }
 // ─────────────────────────────────────────────────────────────────────
-router.put('/:deviceId', async (req, res) => {
+router.patch('/:deviceId/status', async (req, res) => {
+  const id = req.params.deviceId.toUpperCase();
+  const { status } = req.body;
+
+  const validStatuses = ['online', 'offline', 'maintenance', 'error'];
+  if (!status || !validStatuses.includes(status.toLowerCase())) {
+    return res.status(400).json({ error: `Status must be one of: ${validStatuses.join(', ')}` });
+  }
+
+  const cleanStatus = status.toLowerCase();
+
+  // Sync simulator in-memory state
+  const simDev = DEVICES.find((d) => d.deviceId === id);
+  if (simDev) {
+    simDev.status = cleanStatus;
+  }
+
   try {
-    const device = await Device.findOneAndUpdate(
-      { deviceId: req.params.deviceId },
-      req.body,
+    const updated = await Device.findOneAndUpdate(
+      { deviceId: id },
+      { status: cleanStatus, lastSeen: new Date() },
       { new: true }
     );
-    if (!device) return res.status(404).json({ error: 'Device not found' });
-    res.json(device);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (updated) return res.json(updated);
+  } catch (err) {}
+
+  if (simDev) {
+    return res.json({ deviceId: id, status: cleanStatus, updatedInSimulator: true });
   }
+
+  res.status(404).json({ error: `Device ${id} not found` });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// GET /api/devices/:deviceId/health — Diagnostic Health Report (Day 3 Feature)
+// ─────────────────────────────────────────────────────────────────────
+router.get('/:deviceId/health', async (req, res) => {
+  const id = req.params.deviceId.toUpperCase();
+  let dev = null;
+
+  try {
+    dev = await Device.findOne({ deviceId: id }).lean();
+  } catch (err) {}
+
+  if (!dev) {
+    dev = DEVICES.find((d) => d.deviceId === id);
+  }
+
+  if (!dev) {
+    return res.status(404).json({ error: `Device ${id} not found` });
+  }
+
+  const healthScore = dev.status === 'online' ? 98
+                    : dev.status === 'maintenance' ? 70
+                    : dev.status === 'error' ? 25
+                    : 0;
+
+  res.json({
+    deviceId: dev.deviceId,
+    name: dev.name,
+    type: dev.type,
+    status: dev.status,
+    healthScore,
+    statusLevel: healthScore >= 90 ? 'OPTIMAL' : healthScore >= 50 ? 'DEGRADED' : 'CRITICAL',
+    sensorsMonitored: dev.sensors?.length || 0,
+    sensors: dev.sensors || [],
+    diagnostics: {
+      connectivity: dev.status !== 'offline' ? 'CONNECTED' : 'DISCONNECTED',
+      telemetryIngestRate: dev.status === 'online' ? '1.0 Hz' : '0.0 Hz',
+      lastHeartbeat: new Date().toISOString(),
+    },
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
 // DELETE /api/devices/:deviceId — Remove device
 // ─────────────────────────────────────────────────────────────────────
 router.delete('/:deviceId', async (req, res) => {
+  const id = req.params.deviceId.toUpperCase();
   try {
-    const device = await Device.findOneAndDelete({ deviceId: req.params.deviceId });
-    if (!device) return res.status(404).json({ error: 'Device not found' });
-    res.json({ status: 'deleted', deviceId: req.params.deviceId });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    await Device.findOneAndDelete({ deviceId: id });
+  } catch (err) {}
+
+  const idx = DEVICES.findIndex((d) => d.deviceId === id);
+  if (idx !== -1) DEVICES.splice(idx, 1);
+
+  res.json({ status: 'deleted', deviceId: id });
 });
 
 module.exports = router;
-

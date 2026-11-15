@@ -137,3 +137,4 @@ module.exports = {
   validateBatchTelemetry,
   VALID_SENSOR_TYPES,
 };
+

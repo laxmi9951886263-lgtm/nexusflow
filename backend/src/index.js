@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// NexusFlow Backend — Main Server
+// NexusFlow Backend — Main Server (Day 3 Enhanced)
 // Express + MongoDB Time-Series + WebSocket for real-time telemetry
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -13,6 +13,7 @@ const mongoose = require('mongoose');
 const ingestionRoutes = require('./routes/ingestion');
 const deviceRoutes = require('./routes/devices');
 const graphRoutes = require('./routes/graphs');
+const simulatorRoutes = require('./routes/simulator');
 
 // ── Simulator ──
 const { generateBatch, getDeviceList } = require('./services/simulator');
@@ -69,6 +70,7 @@ app.locals.broadcast = broadcast;
 app.use('/api/ingest', ingestionRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/graphs', graphRoutes);
+app.use('/api/simulator', simulatorRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -78,6 +80,7 @@ app.get('/api/health', (req, res) => {
     mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     wsClients: wsClients.size,
     uptime: Math.round(process.uptime()),
+    features: ['time-series-ingest', 'device-registry', 'simulator-control', 'websocket-stream'],
   });
 });
 
@@ -102,8 +105,7 @@ async function start() {
       console.log(`[DB] 🌱 Seeded ${mockDevices.length} mock devices`);
     }
   } catch (err) {
-    console.warn('[DB] ⚠️ MongoDB unavailable — running in demo mode (no persistence)');
-    console.warn(`[DB]    ${err.message}`);
+    console.warn('[DB] ⚠️ MongoDB unavailable — running in demo mode (in-memory persistence)');
   }
 
   // Start HTTP + WS server
@@ -120,15 +122,16 @@ async function start() {
     console.log('║   POST /api/ingest         Single telemetry      ║');
     console.log('║   POST /api/ingest/batch   Batch telemetry       ║');
     console.log('║   GET  /api/ingest/stats   Ingestion stats       ║');
-    console.log('║   GET  /api/ingest/query   Query telemetry       ║');
+    console.log('║   GET  /api/ingest/time-range Time-window stats  ║');
     console.log('║   CRUD /api/devices        Device registry       ║');
+    console.log('║   GET  /api/devices/:id/health Diagnostics       ║');
+    console.log('║   POST /api/simulator/inject  Anomaly injection  ║');
     console.log('║   CRUD /api/graphs         Flow graph storage    ║');
     console.log('╚══════════════════════════════════════════════════╝');
     console.log('');
   });
 
   // ── Start Mock Telemetry Simulator ──
-  // Generates sensor readings every second and broadcasts via WebSocket
   simulatorInterval = setInterval(() => {
     const batch = generateBatch();
     batch.forEach((point) => {
@@ -153,4 +156,3 @@ process.on('SIGINT', () => {
 });
 
 module.exports = { app, server, wss };
-

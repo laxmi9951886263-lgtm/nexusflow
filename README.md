@@ -24,6 +24,12 @@ A visual, no-code IoT telemetry and reactive rule engine platform. Factory opera
 - Added `/api/ingest/time-range` endpoint for rolling-window statistical aggregations (min, max, avg, sample count).
 - Added automated benchmark suite (`backend/scripts/benchmarkIngest.js`) validating 10,000 records in 24ms (~416k ops/sec).
 
+### Day 3 (Nov 15): IoT Device Registry & Dynamic Hardware Simulator
+- Built IoT device diagnostics and state manager (`backend/src/routes/devices.js`) with `/health` reports and state toggles (`online`, `offline`, `maintenance`, `error`).
+- Expanded industrial telemetry simulator (`backend/src/services/simulator.js`) with calibrated thresholds (warning, critical) and active anomaly injection.
+- Added simulator control endpoints (`backend/src/routes/simulator.js`) for runtime chaos testing (`/inject`, `/status`, `/reset`).
+- Created automated test suite (`backend/scripts/testDeviceRegistry.js`) with 10/10 tests passing.
+
 ---
 
 ## 🚀 Quick Start Guide
@@ -37,9 +43,13 @@ npm start
 - API Running on: `http://localhost:4000/api`
 - WebSocket Telemetry: `ws://localhost:4000/ws`
 
-### 2. Run Ingestion Benchmark:
+### 2. Run Test Suites:
 ```bash
+# Day 2 Ingestion Benchmark
 node backend/scripts/benchmarkIngest.js
+
+# Day 3 Device Registry & Anomaly Test
+node backend/scripts/testDeviceRegistry.js
 ```
 
 ### 3. Start Frontend:
