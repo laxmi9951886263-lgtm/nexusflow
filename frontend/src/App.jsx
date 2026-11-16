@@ -13,40 +13,11 @@ import SensorSourceNode from './nodes/SensorSourceNode.jsx';
 import MathOperationNode from './nodes/MathOperationNode.jsx';
 import ThresholdCheckNode from './nodes/ThresholdCheckNode.jsx';
 import AlertActionNode from './nodes/AlertActionNode.jsx';
+import CanvasToolbar from './components/CanvasToolbar.jsx';
+import { isValidConnection, FLOW_TEMPLATES } from './utils/flowValidation.js';
 
-// ── Initial demo rule pipeline ──
-const initialNodes = [
-  {
-    id: 'node-1',
-    type: 'sensorSource',
-    position: { x: 80, y: 150 },
-    data: { deviceId: 'TURB-001', sensorType: 'temperature', lastValue: 78.4 },
-  },
-  {
-    id: 'node-2',
-    type: 'mathOperation',
-    position: { x: 370, y: 150 },
-    data: { operation: 'movingAverage', param: 5, outputValue: 77.2 },
-  },
-  {
-    id: 'node-3',
-    type: 'thresholdCheck',
-    position: { x: 670, y: 150 },
-    data: { operator: 'gt', threshold: 80, triggered: false },
-  },
-  {
-    id: 'node-4',
-    type: 'alertAction',
-    position: { x: 970, y: 150 },
-    data: { actionType: 'sms', target: '+91 98765 43210', message: 'CRITICAL: Turbine Temp > 80°C' },
-  },
-];
-
-const initialEdges = [
-  { id: 'e1-2', source: 'node-1', target: 'node-2', animated: true, style: { stroke: '#60a5fa', strokeWidth: 2 } },
-  { id: 'e2-3', source: 'node-2', target: 'node-3', animated: true, style: { stroke: '#a78bfa', strokeWidth: 2 } },
-  { id: 'e3-4', source: 'node-3', sourceHandle: 'true', target: 'node-4', animated: true, style: { stroke: '#ef4444', strokeWidth: 2 } },
-];
+const initialNodes = FLOW_TEMPLATES.turbineOverheat.nodes;
+const initialEdges = FLOW_TEMPLATES.turbineOverheat.edges;
 
 export default function App() {
   const [nodes, setNodes] = useState(initialNodes);
@@ -56,7 +27,6 @@ export default function App() {
   const [liveReading, setLiveReading] = useState(null);
   const reactFlowWrapper = useRef(null);
 
-  // Custom node types definition
   const nodeTypes = useMemo(() => ({
     sensorSource: SensorSourceNode,
     mathOperation: MathOperationNode,
@@ -74,12 +44,32 @@ export default function App() {
     []
   );
 
+  // Validate connection before adding edge
   const onConnect = useCallback(
-    (params) => setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#34d399', strokeWidth: 2 } }, eds)),
-    []
+    (params) => {
+      if (!isValidConnection(params, nodes)) {
+        setSaveStatus('⚠️ Invalid connection: incompatible node types');
+        setTimeout(() => setSaveStatus(''), 2500);
+        return;
+      }
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...params,
+            animated: true,
+            style: {
+              stroke: params.sourceHandle === 'true' ? '#ef4444' : '#60a5fa',
+              strokeWidth: 2,
+            },
+          },
+          eds
+        )
+      );
+    },
+    [nodes]
   );
 
-  // ── Drag & drop from palette ──
+  // Drag & drop from palette
   const onDragOver = useCallback((event) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -93,7 +83,7 @@ export default function App() {
 
       const position = {
         x: event.clientX - 280,
-        y: event.clientY - 60,
+        y: event.clientY - 90,
       };
 
       const newNode = {
@@ -108,13 +98,37 @@ export default function App() {
     []
   );
 
-  // ── Save graph to backend ──
+  // Quick add from toolbar
+  const handleQuickAdd = (type) => {
+    const newNode = {
+      id: `node-${Date.now()}`,
+      type,
+      position: { x: 200 + Math.random() * 200, y: 150 + Math.random() * 100 },
+      data: { label: `${type}` },
+    };
+    setNodes((nds) => nds.concat(newNode));
+  };
+
+  const handleLoadTemplate = (tpl) => {
+    if (!tpl) return;
+    setNodes(tpl.nodes);
+    setEdges(tpl.edges);
+    setSaveStatus(`Loaded: ${tpl.name}`);
+    setTimeout(() => setSaveStatus(''), 3000);
+  };
+
+  const handleClear = () => {
+    setNodes([]);
+    setEdges([]);
+  };
+
+  // Save graph to backend
   const handleSaveGraph = async () => {
     setSaveStatus('Saving graph...');
     try {
       const payload = {
-        name: 'Turbine Temp Anomaly Rule',
-        description: 'Auto-compiled RxJS rule: Temp > 80°C trigger SMS alert',
+        name: 'NexusFlow Rule Pipeline',
+        description: `Exported with ${nodes.length} nodes and ${edges.length} connections`,
         nodes,
         edges,
       };
@@ -134,7 +148,7 @@ export default function App() {
     setTimeout(() => setSaveStatus(''), 3000);
   };
 
-  // ── Connect to live telemetry WebSocket ──
+  // WebSocket Live Stream Listener
   useEffect(() => {
     let ws;
     try {
@@ -146,10 +160,9 @@ export default function App() {
             setTelemetryCount((c) => c + 1);
             setLiveReading(msg.data);
 
-            // Update sensorSource node dynamically
             setNodes((nds) =>
               nds.map((node) => {
-                if (node.type === 'sensorSource' && node.data.deviceId === msg.data.deviceId) {
+                if (node.type === 'sensorSource' && node.data?.deviceId === msg.data.deviceId) {
                   return {
                     ...node,
                     data: { ...node.data, lastValue: msg.data.value },
@@ -176,7 +189,7 @@ export default function App() {
           <div style={styles.logo}>NF</div>
           <div>
             <h1 style={styles.title}>NexusFlow</h1>
-            <p style={styles.subtitle}>Visual IoT Telemetry & Rule Engine · Week 1</p>
+            <p style={styles.subtitle}>Visual IoT Telemetry & Rule Engine · Day 4</p>
           </div>
         </div>
 
@@ -199,6 +212,15 @@ export default function App() {
           {saveStatus && <span style={styles.saveStatus}>{saveStatus}</span>}
         </div>
       </header>
+
+      {/* ── CANVAS TOOLBAR ── */}
+      <CanvasToolbar
+        onLoadTemplate={handleLoadTemplate}
+        onClearCanvas={handleClear}
+        nodeCount={nodes.length}
+        edgeCount={edges.length}
+        onAddQuickNode={handleQuickAdd}
+      />
 
       {/* ── MAIN WORKSPACE ── */}
       <div style={styles.workspace}>
@@ -240,12 +262,12 @@ export default function App() {
           </div>
 
           <div style={styles.infoBox}>
-            <div style={styles.infoTitle}>Week 1 Architecture:</div>
+            <div style={styles.infoTitle}>Day 4 Capabilities:</div>
             <ul style={styles.infoList}>
-              <li>✓ MongoDB 5.0+ Time-Series</li>
-              <li>✓ 5,000 writes/sec batch buffer</li>
-              <li>✓ React Flow visual canvas</li>
-              <li>✓ Graph JSON serialization</li>
+              <li>✓ Connection Type Validation</li>
+              <li>✓ Preset Rule Templates</li>
+              <li>✓ Real-time Live Wire Flow</li>
+              <li>✓ Quick-add Canvas Toolbar</li>
             </ul>
           </div>
         </aside>
@@ -330,4 +352,3 @@ const styles = {
   controls: { background: '#0f172a', border: '1px solid #1e293b' },
   minimap: { background: '#0d1322', border: '1px solid #1e293b', borderRadius: 8 },
 };
-

@@ -30,6 +30,11 @@ A visual, no-code IoT telemetry and reactive rule engine platform. Factory opera
 - Added simulator control endpoints (`backend/src/routes/simulator.js`) for runtime chaos testing (`/inject`, `/status`, `/reset`).
 - Created automated test suite (`backend/scripts/testDeviceRegistry.js`) with 10/10 tests passing.
 
+### Day 4 (Nov 16): Canvas Connection Validation & Template Toolbar
+- Added intelligent topology validator (`frontend/src/utils/flowValidation.js`) enforcing acyclic directed flow, terminal sinks, and root sources.
+- Built interactive toolbar component (`frontend/src/components/CanvasToolbar.jsx`) with preset rule templates (Turbine Overheat SMS, Boiler Safety Webhook) and topology metrics.
+- Upgraded `App.jsx` with connection error toasts, quick node creation buttons, and dynamic wire coloring.
+
 ---
 
 ## 🚀 Quick Start Guide
