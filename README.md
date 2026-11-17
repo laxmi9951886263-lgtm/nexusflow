@@ -35,6 +35,11 @@ A visual, no-code IoT telemetry and reactive rule engine platform. Factory opera
 - Built interactive toolbar component (`frontend/src/components/CanvasToolbar.jsx`) with preset rule templates (Turbine Overheat SMS, Boiler Safety Webhook) and topology metrics.
 - Upgraded `App.jsx` with connection error toasts, quick node creation buttons, and dynamic wire coloring.
 
+### Day 5 (Nov 17): Graph JSON Serialization & Topological Execution Planner
+- Created graph compiler planner (`backend/src/services/graphSerializer.js`) implementing Kahn's algorithm for topological sorting and cycle detection.
+- Added `/api/graphs/validate`, `/api/graphs/:id/export`, and `/api/graphs/import` endpoints for visual-to-stream compilation.
+- Created automated verification test suite (`backend/scripts/testGraphSerialization.js`) with 10/10 tests passing.
+
 ---
 
 ## 🚀 Quick Start Guide
@@ -55,6 +60,9 @@ node backend/scripts/benchmarkIngest.js
 
 # Day 3 Device Registry & Anomaly Test
 node backend/scripts/testDeviceRegistry.js
+
+# Day 5 Graph Serialization & DAG Test
+node backend/scripts/testGraphSerialization.js
 ```
 
 ### 3. Start Frontend:
