@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════
-// NexusFlow Backend — Main Server (Day 3 Enhanced)
-// Express + MongoDB Time-Series + WebSocket for real-time telemetry
+// NexusFlow Backend — Main Server (Day 6 Stream-Compiler Enabled)
+// Express + MongoDB Time-Series + RxJS Reactive Stream Engine
 // ═══════════════════════════════════════════════════════════════════════
 
 const express = require('express');
@@ -14,9 +14,11 @@ const ingestionRoutes = require('./routes/ingestion');
 const deviceRoutes = require('./routes/devices');
 const graphRoutes = require('./routes/graphs');
 const simulatorRoutes = require('./routes/simulator');
+const executionRoutes = require('./routes/execution');
 
-// ── Simulator ──
+// ── Services ──
 const { generateBatch, getDeviceList } = require('./services/simulator');
+const { pushTelemetryToStream } = require('./services/streamCompiler');
 const Device = require('./models/Device');
 
 // ── Config ──
@@ -53,7 +55,6 @@ wss.on('connection', (ws) => {
   }));
 });
 
-// Broadcast function — available to routes via app.locals
 function broadcast(data) {
   const msg = JSON.stringify(data);
   for (const client of wsClients) {
@@ -71,6 +72,7 @@ app.use('/api/ingest', ingestionRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/graphs', graphRoutes);
 app.use('/api/simulator', simulatorRoutes);
+app.use('/api/execution', executionRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -80,7 +82,7 @@ app.get('/api/health', (req, res) => {
     mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     wsClients: wsClients.size,
     uptime: Math.round(process.uptime()),
-    features: ['time-series-ingest', 'device-registry', 'simulator-control', 'websocket-stream'],
+    modules: ['Time-Series-Ingest', 'Device-Registry', 'RxJS-Stream-Compiler', 'WebSocket-Broadcaster'],
   });
 });
 
@@ -90,14 +92,12 @@ app.get('/api/health', (req, res) => {
 let simulatorInterval = null;
 
 async function start() {
-  // Try connecting to MongoDB
   try {
     await mongoose.connect(MONGO_URI, {
       serverSelectionTimeoutMS: 3000,
     });
     console.log('[DB] ✅ Connected to MongoDB');
 
-    // Seed default devices if empty
     const deviceCount = await Device.countDocuments();
     if (deviceCount === 0) {
       const mockDevices = getDeviceList();
@@ -112,39 +112,29 @@ async function start() {
   server.listen(PORT, () => {
     console.log('');
     console.log('╔══════════════════════════════════════════════════╗');
-    console.log('║         NexusFlow — IoT Rule Engine             ║');
+    console.log('║    NexusFlow — Visual IoT Rule Engine (Day 6)   ║');
     console.log('╠══════════════════════════════════════════════════╣');
     console.log(`║  🌐 HTTP API:    http://localhost:${PORT}/api      ║`);
     console.log(`║  📡 WebSocket:   ws://localhost:${PORT}/ws         ║`);
-    console.log(`║  💓 Health:      http://localhost:${PORT}/api/health║`);
-    console.log('║                                                  ║');
-    console.log('║  Endpoints:                                      ║');
-    console.log('║   POST /api/ingest         Single telemetry      ║');
-    console.log('║   POST /api/ingest/batch   Batch telemetry       ║');
-    console.log('║   GET  /api/ingest/stats   Ingestion stats       ║');
-    console.log('║   GET  /api/ingest/time-range Time-window stats  ║');
-    console.log('║   CRUD /api/devices        Device registry       ║');
-    console.log('║   GET  /api/devices/:id/health Diagnostics       ║');
-    console.log('║   POST /api/simulator/inject  Anomaly injection  ║');
-    console.log('║   CRUD /api/graphs         Flow graph storage    ║');
+    console.log(`║  ⚡ Stream Run:  POST /api/execution/compile/:id ║`);
     console.log('╚══════════════════════════════════════════════════╝');
     console.log('');
   });
 
-  // ── Start Mock Telemetry Simulator ──
+  // Start Mock Telemetry Simulator -> feed to both WebSocket and RxJS stream
   simulatorInterval = setInterval(() => {
     const batch = generateBatch();
     batch.forEach((point) => {
+      pushTelemetryToStream(point);
       broadcast({ type: 'telemetry', data: point });
     });
   }, 1000);
 
-  console.log('[Simulator] 📊 Mock telemetry broadcasting every 1s');
+  console.log('[Simulator] 📊 Mock telemetry broadcasting & streaming into RxJS compiler every 1s');
 }
 
 start();
 
-// Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n[Server] Shutting down...');
   if (simulatorInterval) clearInterval(simulatorInterval);

@@ -6,7 +6,7 @@ A visual, no-code IoT telemetry and reactive rule engine platform. Factory opera
 
 ## 🏗️ Architecture & Tech Stack
 
-- **Backend:** Node.js, Express, WebSocket (`ws`), MongoDB 5.0+ (Native Time-Series Collections)
+- **Backend:** Node.js, Express, RxJS (Reactive Observables), WebSocket (`ws`), MongoDB 5.0+ (Native Time-Series Collections)
 - **Frontend:** React, React Flow (interactive node-based drag & drop canvas), Vite
 - **Data Ingestion:** In-memory batch write buffer handling **5,000+ writes/second** into MongoDB Time-Series bucketing.
 
@@ -40,6 +40,12 @@ A visual, no-code IoT telemetry and reactive rule engine platform. Factory opera
 - Added `/api/graphs/validate`, `/api/graphs/:id/export`, and `/api/graphs/import` endpoints for visual-to-stream compilation.
 - Created automated verification test suite (`backend/scripts/testGraphSerialization.js`) with 10/10 tests passing.
 
+### Day 6 (Nov 19): RxJS Reactive Stream Compiler Engine
+- Built logic compilation engine (`backend/src/services/streamCompiler.js`) transforming visual React Flow graphs into active RxJS Observables (`filter`, `map`, `tap`).
+- Added execution controller endpoints (`backend/src/routes/execution.js`) for compiling, executing, and stopping live stream pipelines (`/compile/:id`, `/stop/:id`, `/active`).
+- Wired continuous telemetry feed directly into the reactive event bus (`telemetryBus$`).
+- Created automated stream test suite (`backend/scripts/testStreamCompiler.js`) with 12/12 tests passing.
+
 ---
 
 ## 🚀 Quick Start Guide
@@ -63,6 +69,9 @@ node backend/scripts/testDeviceRegistry.js
 
 # Day 5 Graph Serialization & DAG Test
 node backend/scripts/testGraphSerialization.js
+
+# Day 6 RxJS Stream Compiler Test
+node backend/scripts/testStreamCompiler.js
 ```
 
 ### 3. Start Frontend:

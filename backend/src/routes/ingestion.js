@@ -5,10 +5,11 @@ const {
   validateSingleTelemetry,
   validateBatchTelemetry,
 } = require('../middleware/validator');
+const { pushTelemetryToStream } = require('../services/streamCompiler');
 
 // ═══════════════════════════════════════════════════════════════════════
-// HIGH-SPEED TELEMETRY INGESTION ENDPOINTS (Day 2 Enhanced)
-// Features: In-memory write buffering, schema validation, range queries
+// HIGH-SPEED TELEMETRY INGESTION ENDPOINTS (Day 6 Stream-Enabled)
+// Features: In-memory write buffering, schema validation, RxJS stream pipe
 // ═══════════════════════════════════════════════════════════════════════
 
 let writeBuffer = [];
@@ -55,6 +56,9 @@ router.post('/', validateSingleTelemetry, (req, res) => {
     flushBuffer();
   }
 
+  // Push to reactive RxJS stream compiler for real-time rule evaluation
+  pushTelemetryToStream(doc);
+
   // Broadcast to live WebSocket subscribers
   if (req.app.locals.broadcast) {
     req.app.locals.broadcast({
@@ -81,6 +85,9 @@ router.post('/batch', validateBatchTelemetry, async (req, res) => {
     stats.totalIngested += docs.length;
     stats.totalBatches++;
 
+    // Push each to RxJS stream
+    docs.forEach((d) => pushTelemetryToStream(d));
+
     if (req.app.locals.broadcast && docs.length > 0) {
       req.app.locals.broadcast({
         type: 'telemetry_batch',
@@ -101,8 +108,7 @@ router.post('/batch', validateBatchTelemetry, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// GET /api/ingest/time-range — Time-Window Range Query (Day 2 Milestone)
-// Query: ?deviceId=TURB-001&sensorType=temperature&minutes=60
+// GET /api/ingest/time-range — Time-Window Range Query
 // ─────────────────────────────────────────────────────────────────────
 router.get('/time-range', async (req, res) => {
   const { deviceId, sensorType, minutes = 30 } = req.query;
