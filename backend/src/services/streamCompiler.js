@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════
-// NexusFlow — RxJS Reactive Stream Compiler Engine (Day 6 Milestone)
+// NexusFlow — RxJS Reactive Stream Compiler Engine (Day 7 Math-Integrated)
 // Translates serialized visual React Flow graphs into live executable
 // RxJS Observable data pipelines that process continuous IoT streams.
 // ═══════════════════════════════════════════════════════════════════════
@@ -7,6 +7,7 @@
 const { Subject } = require('rxjs');
 const { filter, map, tap } = require('rxjs/operators');
 const { serializeAndValidateGraph } = require('./graphSerializer');
+const { applyMathOperation } = require('./mathEngine');
 
 // Global event bus streaming all incoming raw telemetry points
 const telemetryBus$ = new Subject();
@@ -49,7 +50,6 @@ function compileGraphToObservable(graph) {
   }
 
   const { nodes, edges } = graph;
-  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
   // Find root source nodes
   const rootSourceNodes = nodes.filter((n) => n.type === 'sensorSource');
@@ -88,22 +88,21 @@ function compileGraphToObservable(graph) {
       return true;
     }),
 
-    // 2. Map: Apply math operations
+    // 2. Map: Apply advanced math operations (SMA, EMA, conversions)
     map((point) => {
       let transformedValue = point.value;
+      const bufferKey = `${point.deviceId}:${point.sensorType}`;
+
       mathNodes.forEach((mn) => {
         const op = mn.data?.operation || 'movingAverage';
-        const param = Number(mn.data?.param ?? 1);
-        if (op === 'multiply') transformedValue *= param;
-        if (op === 'add') transformedValue += param;
-        if (op === 'abs') transformedValue = Math.abs(transformedValue);
-        if (op === 'round') transformedValue = Math.round(transformedValue);
-        if (op === 'celsiusToF') transformedValue = (transformedValue * 9) / 5 + 32;
+        const param = mn.data?.param ?? 5;
+        transformedValue = applyMathOperation(op, transformedValue, param, `${bufferKey}:${mn.id}`);
       });
+
       return {
         ...point,
         originalValue: point.value,
-        transformedValue: parseFloat(transformedValue.toFixed(2)),
+        transformedValue: parseFloat(Number(transformedValue).toFixed(2)),
       };
     }),
 
@@ -127,6 +126,7 @@ function compileGraphToObservable(graph) {
         deviceId: alertData.deviceId,
         sensorType: alertData.sensorType,
         value: alertData.transformedValue,
+        originalValue: alertData.originalValue,
         triggeredAt: runtimeStats.lastTriggeredAt,
         actionsDispatched: alertNodes.map((an) => ({
           type: an.data?.actionType || 'sms',

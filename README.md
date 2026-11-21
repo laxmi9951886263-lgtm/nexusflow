@@ -46,6 +46,12 @@ A visual, no-code IoT telemetry and reactive rule engine platform. Factory opera
 - Wired continuous telemetry feed directly into the reactive event bus (`telemetryBus$`).
 - Created automated stream test suite (`backend/scripts/testStreamCompiler.js`) with 12/12 tests passing.
 
+### Day 7 (Nov 21): Industrial Math & Signal Processing Engine
+- Built math & signal processor (`backend/src/services/mathEngine.js`) providing sliding window Simple Moving Average (SMA), Exponential Moving Average (EMA), and glitch/noise outlier filtering.
+- Implemented bidirectional industrial unit conversions (`°C ↔ °F`, `bar ↔ PSI`, `L/min ↔ GPM`, `RPM ↔ Hz`).
+- Integrated dynamic sliding windows directly into RxJS `map` streams in `streamCompiler.js`.
+- Created automated math test suite (`backend/scripts/testMathEngine.js`) with 12/12 tests passing.
+
 ---
 
 ## 🚀 Quick Start Guide
@@ -72,6 +78,9 @@ node backend/scripts/testGraphSerialization.js
 
 # Day 6 RxJS Stream Compiler Test
 node backend/scripts/testStreamCompiler.js
+
+# Day 7 Math & Signal Processing Test
+node backend/scripts/testMathEngine.js
 ```
 
 ### 3. Start Frontend:
