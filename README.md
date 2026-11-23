@@ -50,7 +50,13 @@ A visual, no-code IoT telemetry and reactive rule engine platform. Factory opera
 - Built math & signal processor (`backend/src/services/mathEngine.js`) providing sliding window Simple Moving Average (SMA), Exponential Moving Average (EMA), and glitch/noise outlier filtering.
 - Implemented bidirectional industrial unit conversions (`°C ↔ °F`, `bar ↔ PSI`, `L/min ↔ GPM`, `RPM ↔ Hz`).
 - Integrated dynamic sliding windows directly into RxJS `map` streams in `streamCompiler.js`.
-- Created automated math test suite (`backend/scripts/testMathEngine.js`) with 12/12 tests passing.
+- Created automated math test suite (`backend/scripts/testMathEngine.js`) with 13/13 tests passing.
+
+### Day 8 (Nov 23): Threshold Logic Engine & Hysteresis Anti-Flapping
+- Built stateful threshold evaluation engine (`backend/src/services/thresholdEngine.js`) with predicates (`gt`, `lt`, `gte`, `lte`, `eq`, `between`, `outside`).
+- Implemented hysteresis anti-flapping de-bounce bands preventing rapid oscillating alert storms when values hover near threshold borders.
+- Added rule cooldown timers to enforce rate limiting on action dispatches.
+- Created automated threshold test suite (`backend/scripts/testThresholdEngine.js`) with 12/12 tests passing.
 
 ---
 
@@ -81,6 +87,9 @@ node backend/scripts/testStreamCompiler.js
 
 # Day 7 Math & Signal Processing Test
 node backend/scripts/testMathEngine.js
+
+# Day 8 Threshold & Hysteresis Test
+node backend/scripts/testThresholdEngine.js
 ```
 
 ### 3. Start Frontend:

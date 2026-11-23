@@ -1,48 +1,22 @@
 // ═══════════════════════════════════════════════════════════════════════
-// NexusFlow — RxJS Reactive Stream Compiler Engine (Day 7 Math-Integrated)
+// NexusFlow — RxJS Reactive Stream Compiler Engine (Day 8 Hysteresis-Enabled)
 // Translates serialized visual React Flow graphs into live executable
-// RxJS Observable data pipelines that process continuous IoT streams.
+// RxJS Observable data pipelines with hysteresis anti-flapping gates.
 // ═══════════════════════════════════════════════════════════════════════
 
 const { Subject } = require('rxjs');
 const { filter, map, tap } = require('rxjs/operators');
 const { serializeAndValidateGraph } = require('./graphSerializer');
 const { applyMathOperation } = require('./mathEngine');
+const { evaluateThresholdWithHysteresis } = require('./thresholdEngine');
 
-// Global event bus streaming all incoming raw telemetry points
 const telemetryBus$ = new Subject();
-
-// Registry of actively running compiled pipelines
-// Key: graphId -> { subscription, manifest, name, stats: { evaluated, triggered } }
 const activePipelines = new Map();
 
-/**
- * Dispatches an incoming telemetry point into the reactive stream bus.
- */
 function pushTelemetryToStream(telemetryPoint) {
   telemetryBus$.next(telemetryPoint);
 }
 
-/**
- * Evaluates threshold conditions.
- */
-function evaluateThreshold(val, operator, threshold) {
-  const v = Number(val);
-  const t = Number(threshold);
-  switch (operator) {
-    case 'gt': return v > t;
-    case 'gte': return v >= t;
-    case 'lt': return v < t;
-    case 'lte': return v <= t;
-    case 'eq': return Math.abs(v - t) < 0.0001;
-    case 'neq': return Math.abs(v - t) >= 0.0001;
-    default: return v > t;
-  }
-}
-
-/**
- * Compiles a React Flow JSON graph into an active RxJS Observable pipeline.
- */
 function compileGraphToObservable(graph) {
   const validation = serializeAndValidateGraph(graph);
   if (!validation.valid) {
@@ -50,13 +24,12 @@ function compileGraphToObservable(graph) {
   }
 
   const { nodes, edges } = graph;
+  const graphId = graph.id || graph._id || 'compiled-pipeline';
 
-  // Find root source nodes
   const rootSourceNodes = nodes.filter((n) => n.type === 'sensorSource');
   const targetDeviceIds = rootSourceNodes.map((n) => n.data?.deviceId?.toUpperCase()).filter(Boolean);
   const targetSensors = rootSourceNodes.map((n) => n.data?.sensorType?.toLowerCase()).filter(Boolean);
 
-  // Pipeline runtime statistics
   const runtimeStats = {
     evaluatedCount: 0,
     triggeredCount: 0,
@@ -65,16 +38,12 @@ function compileGraphToObservable(graph) {
     recentAlerts: [],
   };
 
-  // Find math operations
   const mathNodes = nodes.filter((n) => n.type === 'mathOperation');
-  // Find threshold checks
   const thresholdNodes = nodes.filter((n) => n.type === 'thresholdCheck');
-  // Find alert action sinks
   const alertNodes = nodes.filter((n) => n.type === 'alertAction');
 
-  // Build the RxJS pipeline starting from telemetryBus$
   let stream$ = telemetryBus$.pipe(
-    // 1. Filter: Match targeted devices and sensors
+    // 1. Filter: Match targeted devices & sensors
     filter((point) => {
       runtimeStats.evaluatedCount++;
       runtimeStats.lastEvaluatedAt = new Date().toISOString();
@@ -88,7 +57,7 @@ function compileGraphToObservable(graph) {
       return true;
     }),
 
-    // 2. Map: Apply advanced math operations (SMA, EMA, conversions)
+    // 2. Map: Apply math transformations (SMA, EMA, conversions)
     map((point) => {
       let transformedValue = point.value;
       const bufferKey = `${point.deviceId}:${point.sensorType}`;
@@ -106,17 +75,31 @@ function compileGraphToObservable(graph) {
       };
     }),
 
-    // 3. Filter: Apply threshold logic checks
+    // 3. Filter: Apply stateful threshold check with hysteresis anti-flapping
     filter((point) => {
       if (thresholdNodes.length === 0) return true;
+
       return thresholdNodes.every((tn) => {
         const op = tn.data?.operator || 'gt';
         const thresh = tn.data?.threshold ?? 80;
-        return evaluateThreshold(point.transformedValue, op, thresh);
+        const delta = tn.data?.hysteresisDelta ?? 3.0;
+
+        const evalResult = evaluateThresholdWithHysteresis({
+          ruleId: `${graphId}:${tn.id}`,
+          deviceId: point.deviceId,
+          sensorType: point.sensorType,
+          value: point.transformedValue,
+          operator: op,
+          threshold: thresh,
+          hysteresisDelta: delta,
+          cooldownSeconds: 5,
+        });
+
+        return evalResult.isTriggered;
       });
     }),
 
-    // 4. Tap: Trigger action handlers (SMS / Webhook / Log)
+    // 4. Tap: Trigger action sinks (SMS / Webhook / Log)
     tap((alertData) => {
       runtimeStats.triggeredCount++;
       runtimeStats.lastTriggeredAt = new Date().toISOString();
@@ -147,11 +130,7 @@ function compileGraphToObservable(graph) {
   return { stream$, runtimeStats, manifest: validation.manifest };
 }
 
-/**
- * Activates and runs a graph as an ongoing RxJS subscription.
- */
 function activateRulePipeline(graphId, graph) {
-  // If already running, stop previous
   stopRulePipeline(graphId);
 
   const { stream$, runtimeStats, manifest } = compileGraphToObservable(graph);
@@ -173,9 +152,6 @@ function activateRulePipeline(graphId, graph) {
   return entry;
 }
 
-/**
- * Stops an active running pipeline.
- */
 function stopRulePipeline(graphId) {
   const id = String(graphId);
   const entry = activePipelines.get(id);
