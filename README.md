@@ -56,7 +56,13 @@ A visual, no-code IoT telemetry and reactive rule engine platform. Factory opera
 - Built stateful threshold evaluation engine (`backend/src/services/thresholdEngine.js`) with predicates (`gt`, `lt`, `gte`, `lte`, `eq`, `between`, `outside`).
 - Implemented hysteresis anti-flapping de-bounce bands preventing rapid oscillating alert storms when values hover near threshold borders.
 - Added rule cooldown timers to enforce rate limiting on action dispatches.
-- Created automated threshold test suite (`backend/scripts/testThresholdEngine.js`) with 12/12 tests passing.
+- Created automated threshold test suite (`backend/scripts/testThresholdEngine.js`) with 13/13 tests passing.
+
+### Day 9 (Nov 25): Action Dispatcher & Outbound Alerting Service
+- Built multi-channel outbound notification service (`backend/src/services/actionDispatcher.js`) supporting SMS, Webhook POST, Email, and System Audit Logs.
+- Added template placeholder interpolator (`{{deviceId}}`, `{{sensorType}}`, `{{value}}`, `{{threshold}}`) for personalized operator messages.
+- Built alert audit trail & history API (`backend/src/routes/alerts.js`) with history buffer and delivery stats.
+- Created automated action dispatcher test suite (`backend/scripts/testActionDispatcher.js`) with 8/8 tests passing.
 
 ---
 
@@ -90,6 +96,9 @@ node backend/scripts/testMathEngine.js
 
 # Day 8 Threshold & Hysteresis Test
 node backend/scripts/testThresholdEngine.js
+
+# Day 9 Action Dispatcher & Alerting Test
+node backend/scripts/testActionDispatcher.js
 ```
 
 ### 3. Start Frontend:

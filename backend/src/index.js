@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════
-// NexusFlow Backend — Main Server (Day 6 Stream-Compiler Enabled)
-// Express + MongoDB Time-Series + RxJS Reactive Stream Engine
+// NexusFlow Backend — Main Server (Day 9 Outbound Alert Enabled)
+// Express + MongoDB Time-Series + RxJS + Multi-channel Alert Dispatcher
 // ═══════════════════════════════════════════════════════════════════════
 
 const express = require('express');
@@ -15,6 +15,7 @@ const deviceRoutes = require('./routes/devices');
 const graphRoutes = require('./routes/graphs');
 const simulatorRoutes = require('./routes/simulator');
 const executionRoutes = require('./routes/execution');
+const alertRoutes = require('./routes/alerts');
 
 // ── Services ──
 const { generateBatch, getDeviceList } = require('./services/simulator');
@@ -47,7 +48,6 @@ wss.on('connection', (ws) => {
     console.log(`[WS] Client disconnected (total: ${wsClients.size})`);
   });
 
-  // Send welcome message
   ws.send(JSON.stringify({
     type: 'welcome',
     message: 'Connected to NexusFlow Telemetry Stream',
@@ -58,7 +58,7 @@ wss.on('connection', (ws) => {
 function broadcast(data) {
   const msg = JSON.stringify(data);
   for (const client of wsClients) {
-    if (client.readyState === 1) { // OPEN
+    if (client.readyState === 1) {
       client.send(msg);
     }
   }
@@ -73,6 +73,7 @@ app.use('/api/devices', deviceRoutes);
 app.use('/api/graphs', graphRoutes);
 app.use('/api/simulator', simulatorRoutes);
 app.use('/api/execution', executionRoutes);
+app.use('/api/alerts', alertRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -82,7 +83,7 @@ app.get('/api/health', (req, res) => {
     mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     wsClients: wsClients.size,
     uptime: Math.round(process.uptime()),
-    modules: ['Time-Series-Ingest', 'Device-Registry', 'RxJS-Stream-Compiler', 'WebSocket-Broadcaster'],
+    modules: ['Time-Series-Ingest', 'Device-Registry', 'RxJS-Stream-Compiler', 'Action-Dispatcher', 'WebSocket-Broadcaster'],
   });
 });
 
@@ -108,20 +109,19 @@ async function start() {
     console.warn('[DB] ⚠️ MongoDB unavailable — running in demo mode (in-memory persistence)');
   }
 
-  // Start HTTP + WS server
   server.listen(PORT, () => {
     console.log('');
     console.log('╔══════════════════════════════════════════════════╗');
-    console.log('║    NexusFlow — Visual IoT Rule Engine (Day 6)   ║');
+    console.log('║    NexusFlow — Visual IoT Rule Engine (Day 9)   ║');
     console.log('╠══════════════════════════════════════════════════╣');
     console.log(`║  🌐 HTTP API:    http://localhost:${PORT}/api      ║`);
     console.log(`║  📡 WebSocket:   ws://localhost:${PORT}/ws         ║`);
+    console.log(`║  🔔 Alerts API:  GET  /api/alerts/history          ║`);
     console.log(`║  ⚡ Stream Run:  POST /api/execution/compile/:id ║`);
     console.log('╚══════════════════════════════════════════════════╝');
     console.log('');
   });
 
-  // Start Mock Telemetry Simulator -> feed to both WebSocket and RxJS stream
   simulatorInterval = setInterval(() => {
     const batch = generateBatch();
     batch.forEach((point) => {

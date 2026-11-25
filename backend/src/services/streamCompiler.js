@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════
-// NexusFlow — RxJS Reactive Stream Compiler Engine (Day 8 Hysteresis-Enabled)
+// NexusFlow — RxJS Reactive Stream Compiler Engine (Day 9 Alert-Integrated)
 // Translates serialized visual React Flow graphs into live executable
-// RxJS Observable data pipelines with hysteresis anti-flapping gates.
+// RxJS Observable data pipelines with outbound multi-channel dispatch.
 // ═══════════════════════════════════════════════════════════════════════
 
 const { Subject } = require('rxjs');
@@ -9,6 +9,7 @@ const { filter, map, tap } = require('rxjs/operators');
 const { serializeAndValidateGraph } = require('./graphSerializer');
 const { applyMathOperation } = require('./mathEngine');
 const { evaluateThresholdWithHysteresis } = require('./thresholdEngine');
+const { dispatchAlert } = require('./actionDispatcher');
 
 const telemetryBus$ = new Subject();
 const activePipelines = new Map();
@@ -99,31 +100,38 @@ function compileGraphToObservable(graph) {
       });
     }),
 
-    // 4. Tap: Trigger action sinks (SMS / Webhook / Log)
+    // 4. Tap: Trigger outbound action sinks (SMS / Webhook / Email / Log)
     tap((alertData) => {
       runtimeStats.triggeredCount++;
       runtimeStats.lastTriggeredAt = new Date().toISOString();
 
-      const alertPayload = {
+      alertNodes.forEach((an) => {
+        dispatchAlert({
+          ruleName: graph.name || 'NexusFlow Rule',
+          actionType: an.data?.actionType || 'sms',
+          target: an.data?.target || '+919876543210',
+          templateMessage: an.data?.message || 'ALERT: {{deviceId}} {{sensorType}} at {{value}}',
+          context: {
+            deviceId: alertData.deviceId,
+            sensorType: alertData.sensorType,
+            value: alertData.transformedValue,
+            threshold: thresholdNodes[0]?.data?.threshold || 80,
+            timestamp: runtimeStats.lastTriggeredAt,
+          },
+        }).catch((err) => console.error('[ActionDispatcher] Dispatch error:', err.message));
+      });
+
+      runtimeStats.recentAlerts.unshift({
         ruleName: graph.name || 'Unnamed Rule',
         deviceId: alertData.deviceId,
         sensorType: alertData.sensorType,
         value: alertData.transformedValue,
-        originalValue: alertData.originalValue,
         triggeredAt: runtimeStats.lastTriggeredAt,
-        actionsDispatched: alertNodes.map((an) => ({
-          type: an.data?.actionType || 'sms',
-          target: an.data?.target || 'Default Target',
-          message: an.data?.message || `Alert: ${alertData.deviceId} threshold breached!`,
-        })),
-      };
+      });
 
-      runtimeStats.recentAlerts.unshift(alertPayload);
       if (runtimeStats.recentAlerts.length > 10) {
         runtimeStats.recentAlerts.pop();
       }
-
-      console.log(`[RxJS Engine] 🚨 RULE TRIGGERED: ${alertPayload.ruleName} -> ${alertData.deviceId} value=${alertData.transformedValue}`);
     })
   );
 
