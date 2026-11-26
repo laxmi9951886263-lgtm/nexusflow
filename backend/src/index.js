@@ -19,7 +19,7 @@ const alertRoutes = require('./routes/alerts');
 
 // ── Services ──
 const { generateBatch, getDeviceList } = require('./services/simulator');
-const { pushTelemetryToStream } = require('./services/streamCompiler');
+const { pushTelemetryToStream, setAlertBroadcastHandler } = require('./services/streamCompiler');
 const Device = require('./models/Device');
 
 // ── Config ──
@@ -64,6 +64,11 @@ function broadcast(data) {
   }
 }
 app.locals.broadcast = broadcast;
+
+// Stream Compiler alert broadcast integration
+setAlertBroadcastHandler((alert) => {
+  broadcast({ type: 'alert', data: alert });
+});
 
 // ═══════════════════════════════════════════════════════════════════════
 // API Routes

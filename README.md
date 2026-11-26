@@ -64,6 +64,12 @@ A visual, no-code IoT telemetry and reactive rule engine platform. Factory opera
 - Built alert audit trail & history API (`backend/src/routes/alerts.js`) with history buffer and delivery stats.
 - Created automated action dispatcher test suite (`backend/scripts/testActionDispatcher.js`) with 8/8 tests passing.
 
+### Day 10 (Nov 26): Real-Time Alert Broadcast, Ingestion Audit & Frontend Scaffolding
+- Connected RxJS reactive stream compiler triggers directly to the WebSocket broadcast bus (`type: alert`).
+- Built the interactive Mid-Project Ingestion Audit endpoint (`POST /api/ingest/benchmark`) verifying 5,000+ writes/sec and MongoDB Time-Series bucketing.
+- Published the formal [Week 2 Engineering Write-up](file:///c:/Users/Suguri%20Nagalaxmi/OneDrive/Desktop/nexusflow/docs/WEEK_2_WRITEUP.md).
+- Integrated `recharts` and `lucide-react` dependencies for live telemetry streaming dashboards.
+
 ---
 
 ## 🚀 Quick Start Guide

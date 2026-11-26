@@ -13,6 +13,11 @@ const { dispatchAlert } = require('./actionDispatcher');
 
 const telemetryBus$ = new Subject();
 const activePipelines = new Map();
+let onAlertBroadcast = null;
+
+function setAlertBroadcastHandler(fn) {
+  onAlertBroadcast = fn;
+}
 
 function pushTelemetryToStream(telemetryPoint) {
   telemetryBus$.next(telemetryPoint);
@@ -105,11 +110,16 @@ function compileGraphToObservable(graph) {
       runtimeStats.triggeredCount++;
       runtimeStats.lastTriggeredAt = new Date().toISOString();
 
+      const dispatched = [];
       alertNodes.forEach((an) => {
+        const actionType = an.data?.actionType || 'sms';
+        const target = an.data?.target || '+919876543210';
+        dispatched.push({ type: actionType, target });
+
         dispatchAlert({
           ruleName: graph.name || 'NexusFlow Rule',
-          actionType: an.data?.actionType || 'sms',
-          target: an.data?.target || '+919876543210',
+          actionType,
+          target,
           templateMessage: an.data?.message || 'ALERT: {{deviceId}} {{sensorType}} at {{value}}',
           context: {
             deviceId: alertData.deviceId,
@@ -121,16 +131,25 @@ function compileGraphToObservable(graph) {
         }).catch((err) => console.error('[ActionDispatcher] Dispatch error:', err.message));
       });
 
-      runtimeStats.recentAlerts.unshift({
+      const alertRecord = {
+        ruleId: graphId,
         ruleName: graph.name || 'Unnamed Rule',
         deviceId: alertData.deviceId,
         sensorType: alertData.sensorType,
         value: alertData.transformedValue,
         triggeredAt: runtimeStats.lastTriggeredAt,
-      });
+        actionsDispatched: dispatched,
+      };
+
+      runtimeStats.recentAlerts.unshift(alertRecord);
 
       if (runtimeStats.recentAlerts.length > 10) {
         runtimeStats.recentAlerts.pop();
+      }
+
+      // Notify external subscriber / broadcast if registered
+      if (typeof onAlertBroadcast === 'function') {
+        onAlertBroadcast(alertRecord);
       }
     })
   );
@@ -193,4 +212,5 @@ module.exports = {
   activateRulePipeline,
   stopRulePipeline,
   getActivePipelines,
+  setAlertBroadcastHandler,
 };
